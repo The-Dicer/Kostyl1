@@ -68,6 +68,26 @@ COLOR_ROW_MAP = {
     "Синий": 14, "Фиолетовый": 15, "Розовый": 16, "Бледно-Розовый": 17,
 }
 
+UI_COLORS = {
+    "Белый": "#FFFFFF",
+    "Чёрный": "#000000",
+    "Серый": "#999999",
+    "Коричневый": "#734d00",
+    "Красный": "#FF0000",
+    "Бордовый": "#990000",
+    "Оранжевый": "#FF9933",
+    "Жёлтый": "#FFFF00",
+    "Тёмно-Зеленый": "#336633",
+    "Кислотно-Зеленый": "#00FF99",
+    "Салатовый": "#CCFF00",
+    "Оливковый": "#999933",
+    "Голубой": "#4AB4FF",
+    "Синий": "#0066FF",
+    "Фиолетовый": "#9900CC",
+    "Розовый": "#FF00FF",
+    "Бледно-Розовый": "#FFCCFF"
+}
+
 
 def needs_background_removal(img: Image.Image, white_threshold=220) -> bool:
     img = img.convert("RGBA")
@@ -503,37 +523,52 @@ class VmixApp:
             font=ctk.CTkFont(size=15, weight="bold")
         ).pack(anchor="w", padx=14, pady=(14, 6))
 
-        actions_left = ctk.CTkFrame(left, fg_color="transparent")
-        actions_left.pack(fill="x", padx=14, pady=(0, 10))
+        # === ВЕРХНИЙ РЯД (Глобальные действия с базой) ===
+        actions_global = ctk.CTkFrame(left, fg_color="transparent")
+        actions_global.pack(fill="x", padx=14, pady=(0, 8))
 
         ctk.CTkButton(
-            actions_left,
+            actions_global,
             text="Обновить",
             command=self.load_matches,
             fg_color="#555555",
             hover_color="#333333",
             font=ctk.CTkFont(size=13),
-            width=88
-        ).pack(side="left", padx=(0, 6))
+            width=145
+        ).pack(side="left")
 
         ctk.CTkButton(
-            actions_left,
-            text="Проверить лого",
+            actions_global,
+            text="Pre-flight Check",
+            command=self.run_preflight_check,
+            fg_color="#d35400",
+            hover_color="#e67e22",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            width=155
+        ).pack(side="right")
+
+        # === НИЖНИЙ РЯД (Локальные действия с выбранным матчем) ===
+        actions_local = ctk.CTkFrame(left, fg_color="transparent")
+        actions_local.pack(fill="x", padx=14, pady=(0, 10))
+
+        ctk.CTkButton(
+            actions_local,
+            text="Предпросмотр",
             command=self.preview_logos,
             fg_color="#1f6aa5",
             hover_color="#144870",
             font=ctk.CTkFont(size=13),
-            width=120
-        ).pack(side="left", padx=6)
+            width=145
+        ).pack(side="left")
 
         ctk.CTkButton(
-            actions_left,
+            actions_local,
             text="Отправить в vMix",
             command=self.send_to_vmix,
             fg_color="#28a745",
             hover_color="#218838",
             font=ctk.CTkFont(size=13, weight="bold"),
-            width=146
+            width=155
         ).pack(side="right")
 
         self.scroll_frame = ctk.CTkScrollableFrame(left, width=310, height=480)
@@ -601,6 +636,13 @@ class VmixApp:
         )
         self.status.pack(side="left")
 
+        # Привязка локальных горячих клавиш
+        self.root.bind("<Up>", lambda e: self.navigate_matches(-1))
+        self.root.bind("<Down>", lambda e: self.navigate_matches(1))
+        self.root.bind("<Return>", lambda e: self.send_to_vmix())  # Клавиша Enter
+        self.root.bind("<space>", lambda e: self.preview_logos())  # Клавиша Пробел
+
+        # Загрузка матчей при старте
         self.load_matches()
 
     def add_log(self, text):
@@ -625,10 +667,41 @@ class VmixApp:
         processed_label = ctk.CTkLabel(parent, text="")
         processed_label.pack(pady=(6, 10))
 
+        # Блок выбора цвета
+        color_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        color_frame.pack(pady=(0, 10))
+
+        color_swatch = ctk.CTkFrame(color_frame, width=20, height=20, corner_radius=10, border_width=1,
+                                    border_color="gray")
+        color_swatch.pack(side="left", padx=(0, 10))
+
+        color_var = ctk.StringVar(value="Белый")
+
+        def update_swatch(choice, swatch=color_swatch):
+            swatch.configure(fg_color=UI_COLORS.get(choice, "#FFFFFF"))
+
+        color_menu = ctk.CTkOptionMenu(
+            color_frame,
+            values=list(COLOR_ROW_MAP.keys()),
+            variable=color_var,
+            command=update_swatch,
+            width=140
+        )
+        color_menu.pack(side="left")
+
+        # По умолчанию скрываем выбор цвета, пока не загрузим предпросмотр
+        color_menu.configure(state="disabled")
+
         if side == "home":
             self.home_processed_label = processed_label
+            self.home_color_var = color_var
+            self.home_color_swatch = color_swatch
+            self.home_color_menu = color_menu
         else:
             self.away_processed_label = processed_label
+            self.away_color_var = color_var
+            self.away_color_swatch = color_swatch
+            self.away_color_menu = color_menu
 
     def load_ctk_image(self, file_path, size=(170, 170), checkerboard=True):
         img = Image.open(file_path).convert("RGBA")
@@ -653,11 +726,43 @@ class VmixApp:
 
         return ctk.CTkImage(light_image=final_img, dark_image=final_img, size=size)
 
+    def navigate_matches(self, step):
+        """Перемещение по списку матчей с помощью стрелок Вверх/Вниз"""
+        if not self.matches:
+            return
+
+        current_idx = self.selected_match_idx.get()
+
+        # Если ни один матч еще не выбран, стартуем с первого
+        if current_idx == -1:
+            next_idx = 0
+        else:
+            # Вычисляем следующий индекс
+            next_idx = current_idx + step
+
+            # Защита от выхода за пределы списка (чтобы программа не выдала ошибку)
+            if next_idx < 0:
+                next_idx = 0
+            elif next_idx >= len(self.matches):
+                next_idx = len(self.matches) - 1
+
+        # Устанавливаем новый выбор
+        self.selected_match_idx.set(next_idx)
+
+        # Очищаем предпросмотр логотипов от предыдущего матча
+        self.clear_previews()
+
+        # Обновляем статус-бар
+        match = self.matches[next_idx]
+        self.status.configure(text=f"Выбран матч: {match['team1']} vs {match['team2']}", text_color="gray")
+
     def clear_previews(self):
         self.home_processed_ctk = None
         self.away_processed_ctk = None
         self.home_processed_label.configure(image="", text="")
         self.away_processed_label.configure(image="", text="")
+        self.home_color_menu.configure(state="disabled")
+        self.away_color_menu.configure(state="disabled")
         self.current_match_link = ""
         self.match_link_button.configure(
             state="disabled",
@@ -669,6 +774,17 @@ class VmixApp:
             text=f"Проверка логотипов: {match['team1']} vs {match['team2']}",
             text_color="#cccccc"
         )
+
+        home_color, _ = get_color_row(match["team1"], self.team_db)
+        away_color, _ = get_color_row(match["team2"], self.team_db)
+
+        self.home_color_var.set(home_color)
+        self.home_color_swatch.configure(fg_color=UI_COLORS.get(home_color, "#FFFFFF"))
+        self.home_color_menu.configure(state="normal")
+
+        self.away_color_var.set(away_color)
+        self.away_color_swatch.configure(fg_color=UI_COLORS.get(away_color, "#FFFFFF"))
+        self.away_color_menu.configure(state="normal")
 
         if home_processed:
             self.home_processed_ctk = self.load_ctk_image(home_processed, checkerboard=True)
@@ -792,8 +908,80 @@ class VmixApp:
             rb.pack(anchor="w", pady=6, padx=12)
             self.radio_widgets.append(rb)
 
+        if self.matches:
+            self.selected_match_idx.set(0)
+
         self.status.configure(text=f"Загружено матчей: {len(self.matches)}", text_color="gray")
         self.add_log(f"Загружено матчей: {len(self.matches)}")
+
+    def run_preflight_check(self):
+        if not self.matches:
+            messagebox.showwarning("Внимание", "Сначала загрузите матчи из файла stream_keys.txt!")
+            return
+
+        self.status.configure(text="Выполняется Pre-flight Check...", text_color="#d35400")
+        self.add_log("Запущена проверка всех ссылок и ключей. Пожалуйста, подождите...")
+
+        # Запускаем в отдельном потоке, чтобы интерфейс не завис
+        threading.Thread(target=self.preflight_worker, daemon=True).start()
+
+    def check_url_fast(self, url):
+        """Быстрая проверка доступности ссылки без скачивания всей картинки"""
+        if not url:
+            return False, "Нет ссылки"
+        if "-min" in url:
+            url = url.replace("-min", "-max")
+        try:
+            # Используем stream=True, чтобы скачать только заголовки, а не сам файл
+            r = requests.get(url, stream=True, timeout=5)
+            if r.status_code == 200:
+                return True, "OK"
+            else:
+                return False, f"Ошибка {r.status_code}"
+        except requests.exceptions.Timeout:
+            return False, "Сервер не ответил (Timeout)"
+        except Exception:
+            return False, "Недоступен (Сбой соединения)"
+
+    def preflight_worker(self):
+        errors_count = 0
+
+        self.add_log("\n=== СТАРТ PRE-FLIGHT CHECK ===")
+
+        for i, match in enumerate(self.matches):
+            match_name = f"{match['team1']} vs {match['team2']}"
+            match_issues = []
+
+            # 1. Проверка логотипов
+            home_ok, home_msg = self.check_url_fast(match['home_logo'])
+            if not home_ok:
+                match_issues.append(f"Лого хозяев: {home_msg} ({match['home_logo']})")
+
+            away_ok, away_msg = self.check_url_fast(match['away_logo'])
+            if not away_ok:
+                match_issues.append(f"Лого гостей: {away_msg} ({match['away_logo']})")
+
+            # 2. Проверка ключа трансляции
+            if not match['key'] or not match['server']:
+                match_issues.append("Отсутствует RTMP сервер или ключ трансляции")
+
+            # Если есть проблемы, выводим их в лог
+            if match_issues:
+                self.add_log(f"[Матч {i + 1}] {match_name}:")
+                for issue in match_issues:
+                    self.add_log(f"   {issue}")
+                errors_count += len(match_issues)
+
+        # Вывод итогов проверки
+        if errors_count == 0:
+            self.add_log("Все матчи готовы к эфиру! Проблем не найдено.")
+            self.root.after(0, lambda: self.status.configure(text="Pre-flight: ОК", text_color="#28a745"))
+        else:
+            self.add_log(f"Проверка завершена. Найдено проблем: {errors_count}")
+            self.root.after(0, lambda: self.status.configure(text=f"Pre-flight: Найдено проблем - {errors_count}",
+                                                             text_color="#ffcc00"))
+
+        self.add_log("=== КОНЕЦ ПРОВЕРКИ ===\n")
 
     def send_to_vmix(self):
         idx = self.selected_match_idx.get()
@@ -847,6 +1035,19 @@ class VmixApp:
             )
             self.root.after(0, lambda: save_last_host(self.host_entry.get()))
             self.add_log("Отправка завершена успешно.")
+
+            current_idx = self.selected_match_idx.get()
+            if current_idx + 1 < len(self.matches):
+                next_idx = current_idx + 1
+                # Через after безопасно переключаем UI из фонового потока
+                self.root.after(0, lambda: self.selected_match_idx.set(next_idx))
+                # Очищаем предпросмотр, чтобы старые логотипы не сбивали с толку
+                self.root.after(0, self.clear_previews)
+                self.add_log(
+                    f"Автоматически выбран следующий матч: {self.matches[next_idx]['team1']} vs {self.matches[next_idx]['team2']}")
+            else:
+                self.add_log("Это был последний матч в списке.")
+
         except requests.exceptions.RequestException:
             self.add_log(f"Ошибка сети: vMix недоступен: {self.host_entry.get()}")
             self.root.after(0, lambda: self.indicator.configure(text_color="#ff4444"))
