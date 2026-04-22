@@ -38,24 +38,26 @@ VMIX_INPUTS = {
         "away_logo": "ЛогоГости.Source",
         "home_name": "Хозяева.Text",
         "away_name": "Гости.Text",
-        "home_score": "СчётХозяева.Text",
-        "away_score": "СчётГости.Text",
+        "home_score": "Счёт Хозяева.Text",
+        "away_score": "Счёт Гости.Text",
     },
     "08) Большое Табло": {
         "home_logo": "ЛогоХозяева.Source",
         "away_logo": "ЛогоГости.Source",
         "home_name": "Хозяева.Text",
         "away_name": "Гости.Text",
-        "home_score": "СчётХозяева.Text",
-        "away_score": "СчётГости.Text",
+        "home_score": "Счёт Хозяева.Text",
+        "away_score": "Счёт Гости.Text",
     },
-    "Заставка 2025.gtzip": {
-        "home_logo": "ЛогоХозяева.Source",
-        "away_logo": "ЛогоГости.Source",
-        "home_name": "Хозяева.Text",
-        "away_name": "Гости.Text",
-        "home_score": "СчётХозяева.Text",
-        "away_score": "СчётГости.Text",
+    "Заставка2025": {
+        "home_logo": "Лого Хозяева.Source",
+        "away_logo": "Лого Гости.Source",
+        "home_name": "Хозяева Имя.Text",
+        "away_name": "Гости Имя.Text",
+    },
+    "21) Стингер": {
+        "home_logo": "ЛогоХ.Source",
+        "away_logo": "ЛогоГ.Source",
     },
 }
 
@@ -342,7 +344,9 @@ def vmix_select_ds_row(api_url, ds_name, sheet_name, row_index):
 
 def send_to_all_vmix_inputs(api_url, match, home_logo_file, away_logo_file):
     for input_name, fields in VMIX_INPUTS.items():
-        if match["home_abbr"]:
+
+        # Отправка аббревиатур (названий) команд
+        if match["home_abbr"] and "home_name" in fields:
             vmix_send(api_url, {
                 "Function": "SetText",
                 "Input": input_name,
@@ -350,7 +354,7 @@ def send_to_all_vmix_inputs(api_url, match, home_logo_file, away_logo_file):
                 "Value": match["home_abbr"]
             })
 
-        if match["away_abbr"]:
+        if match["away_abbr"] and "away_name" in fields:
             vmix_send(api_url, {
                 "Function": "SetText",
                 "Input": input_name,
@@ -358,20 +362,25 @@ def send_to_all_vmix_inputs(api_url, match, home_logo_file, away_logo_file):
                 "Value": match["away_abbr"]
             })
 
-        vmix_send(api_url, {
-            "Function": "SetText",
-            "Input": input_name,
-            "SelectedName": fields["home_score"],
-            "Value": "0"
-        })
-        vmix_send(api_url, {
-            "Function": "SetText",
-            "Input": input_name,
-            "SelectedName": fields["away_score"],
-            "Value": "0"
-        })
+        # Обнуление счета
+        if "home_score" in fields:
+            vmix_send(api_url, {
+                "Function": "SetText",
+                "Input": input_name,
+                "SelectedName": fields["home_score"],
+                "Value": "0"
+            })
 
-        if home_logo_file:
+        if "away_score" in fields:
+            vmix_send(api_url, {
+                "Function": "SetText",
+                "Input": input_name,
+                "SelectedName": fields["away_score"],
+                "Value": "0"
+            })
+
+        # Отправка логотипов
+        if home_logo_file and "home_logo" in fields:
             vmix_send(api_url, {
                 "Function": "SetImage",
                 "Input": input_name,
@@ -379,7 +388,7 @@ def send_to_all_vmix_inputs(api_url, match, home_logo_file, away_logo_file):
                 "Value": home_logo_file
             })
 
-        if away_logo_file:
+        if away_logo_file and "away_logo" in fields:
             vmix_send(api_url, {
                 "Function": "SetImage",
                 "Input": input_name,
