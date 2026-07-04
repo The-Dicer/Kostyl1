@@ -31,9 +31,9 @@ SHEET_NAME = "Sheet1"
 
 HOME_DS_NAME = "Цвет Хозяева"
 AWAY_DS_NAME = "Цвет Гости"
-
+# вот тут поменял с "07) Табло" на "Табло"
 VMIX_INPUTS = {
-    "07) Табло": {
+    "Табло": {
         "home_logo": "ЛогоХозяева.Source",
         "away_logo": "ЛогоГости.Source",
         "home_name": "Хозяева.Text",
@@ -446,7 +446,7 @@ def save_last_host(host_str):
 class VmixApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("vMix Управление Трансляциями")
+        self.root.title("Костыли")
         self.root.geometry("980x650")
         self.root.minsize(920, 620)
 
@@ -549,7 +549,7 @@ class VmixApp:
 
         # === НИЖНИЙ РЯД (Локальные действия с выбранным матчем) ===
         actions_local = ctk.CTkFrame(left, fg_color="transparent")
-        actions_local.pack(fill="x", padx=14, pady=(0, 10))
+        actions_local.pack(fill="x", padx=14, pady=(0, 8))  # Чуть уменьшили отступ снизу
 
         ctk.CTkButton(
             actions_local,
@@ -558,7 +558,7 @@ class VmixApp:
             fg_color="#1f6aa5",
             hover_color="#144870",
             font=ctk.CTkFont(size=13),
-            width=145
+            width=145  # Возвращаем оригинальную ширину
         ).pack(side="left")
 
         ctk.CTkButton(
@@ -568,8 +568,18 @@ class VmixApp:
             fg_color="#28a745",
             hover_color="#218838",
             font=ctk.CTkFont(size=13, weight="bold"),
-            width=155
+            width=155  # Возвращаем оригинальную ширину
         ).pack(side="right")
+
+        # === НАСТРОЙКИ ===
+        self.no_logos_var = ctk.BooleanVar(value=False)
+        self.no_logos_checkbox = ctk.CTkCheckBox(
+            left,
+            text="Режим без логотипов",
+            variable=self.no_logos_var,
+            font=ctk.CTkFont(size=13)
+        )
+        self.no_logos_checkbox.pack(anchor="w", padx=16, pady=(0, 10))
 
         self.scroll_frame = ctk.CTkScrollableFrame(left, width=310, height=480)
         self.scroll_frame.pack(fill="both", expand=True, padx=14, pady=(0, 14))
@@ -786,17 +796,21 @@ class VmixApp:
         self.away_color_swatch.configure(fg_color=UI_COLORS.get(away_color, "#FFFFFF"))
         self.away_color_menu.configure(state="normal")
 
+        no_logos = getattr(self, 'no_logos_var', None) and self.no_logos_var.get()
+
         if home_processed:
             self.home_processed_ctk = self.load_ctk_image(home_processed, checkerboard=True)
             self.home_processed_label.configure(image=self.home_processed_ctk, text="")
         else:
-            self.home_processed_label.configure(text="Не удалось обработать", image="")
+            status_text = "Логотипы отключены" if no_logos else "Не удалось обработать"
+            self.home_processed_label.configure(text=status_text, image="")
 
         if away_processed:
             self.away_processed_ctk = self.load_ctk_image(away_processed, checkerboard=True)
             self.away_processed_label.configure(image=self.away_processed_ctk, text="")
         else:
-            self.away_processed_label.configure(text="Не удалось обработать", image="")
+            status_text = "Логотипы отключены" if no_logos else "Не удалось обработать"
+            self.away_processed_label.configure(text=status_text, image="")
 
         self.current_match_link = match.get("match_link", "")
 
@@ -831,11 +845,16 @@ class VmixApp:
     def preview_logos_worker(self, idx):
         try:
             match = self.matches[idx]
-            self.add_log(f"Скачиваю лого хозяев: {match['team1']}")
-            home_processed = prepare_logo_file(match["home_logo"], "home_processed")
 
-            self.add_log(f"Скачиваю лого гостей: {match['team2']}")
-            away_processed = prepare_logo_file(match["away_logo"], "away_processed")
+            if self.no_logos_var.get():
+                self.add_log("Режим 'Без логотипов' включен. Пропуск загрузки логотипов.")
+                home_processed, away_processed = None, None
+            else:
+                self.add_log(f"Скачиваю лого хозяев: {match['team1']}")
+                home_processed = prepare_logo_file(match["home_logo"], "home_processed")
+
+                self.add_log(f"Скачиваю лого гостей: {match['team2']}")
+                away_processed = prepare_logo_file(match["away_logo"], "away_processed")
 
             self.root.after(0, lambda: self.apply_preview_results(match, home_processed, away_processed))
             self.add_log("Готово.")
@@ -1007,11 +1026,16 @@ class VmixApp:
             self.add_log(f"Цвет хозяев: {home_color}, строка {home_row}")
             self.add_log(f"Цвет гостей: {away_color}, строка {away_row}")
 
-            self.add_log("Обрабатываю логотип хозяев...")
-            home_logo_file = prepare_logo_file(match["home_logo"], "home_logo")
+            if self.no_logos_var.get():
+                self.add_log("Режим 'Без логотипов' включен. Пропуск обработки логотипов.")
+                home_logo_file = None
+                away_logo_file = None
+            else:
+                self.add_log("Обрабатываю логотип хозяев...")
+                home_logo_file = prepare_logo_file(match["home_logo"], "home_logo")
 
-            self.add_log("Обрабатываю логотип гостей...")
-            away_logo_file = prepare_logo_file(match["away_logo"], "away_logo")
+                self.add_log("Обрабатываю логотип гостей...")
+                away_logo_file = prepare_logo_file(match["away_logo"], "away_logo")
 
             self.add_log("Отправляю данные во все инпуты vMix...")
             send_to_all_vmix_inputs(api_url, match, home_logo_file, away_logo_file)
